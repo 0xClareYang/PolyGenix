@@ -9,9 +9,14 @@ PROJECT_NAME="${PROJECT_NAME:-PolyGenix}"
 RELEASE_TAG="${RELEASE_TAG:-moltiverse-2026}"
 DEPLOY_RETRIES="${DEPLOY_RETRIES:-3}"
 DEPLOY_RETRY_SLEEP_SECS="${DEPLOY_RETRY_SLEEP_SECS:-4}"
+MONAD_MIN_BALANCE_WEI="${MONAD_MIN_BALANCE_WEI:-0}"
 
 if ! command -v forge >/dev/null 2>&1; then
   echo "[error] forge not found. Install Foundry first: https://book.getfoundry.sh/getting-started/installation" >&2
+  exit 1
+fi
+if ! command -v cast >/dev/null 2>&1; then
+  echo "[error] cast not found. Install Foundry first: https://book.getfoundry.sh/getting-started/installation" >&2
   exit 1
 fi
 
@@ -33,6 +38,35 @@ echo "[info] retries=$DEPLOY_RETRIES retry_sleep_secs=$DEPLOY_RETRY_SLEEP_SECS"
 if ! cast chain-id --rpc-url "$MONAD_RPC_URL" >/dev/null 2>&1; then
   echo "[error] rpc unreachable: $MONAD_RPC_URL" >&2
   exit 4
+fi
+
+deployer_address="$(cast wallet address --private-key "$MONAD_PRIVATE_KEY" 2>/dev/null || true)"
+if [[ -z "$deployer_address" ]]; then
+  echo "[error] MONAD_PRIVATE_KEY format invalid." >&2
+  exit 5
+fi
+balance_wei="$(cast balance "$deployer_address" --rpc-url "$MONAD_RPC_URL" 2>/dev/null || true)"
+if [[ -z "$balance_wei" ]]; then
+  echo "[warn] could not query balance for $deployer_address"
+else
+  balance_eth="$(cast to-unit "$balance_wei" ether 2>/dev/null || echo "unknown")"
+  echo "[info] deployer_address=$deployer_address"
+  echo "[info] deployer_balance_wei=$balance_wei"
+  echo "[info] deployer_balance_eth=$balance_eth"
+  if [[ "$balance_wei" == "0" ]]; then
+    echo "[error] deployer has zero balance on Monad testnet." >&2
+    echo "[hint] fund this address from Monad testnet faucet, then retry." >&2
+    exit 6
+  fi
+  if [[ "$MONAD_MIN_BALANCE_WEI" =~ ^[0-9]+$ ]] && [ "$MONAD_MIN_BALANCE_WEI" -gt 0 ]; then
+    if python3 - "$balance_wei" "$MONAD_MIN_BALANCE_WEI" <<'PY'
+import sys
+raise SystemExit(0 if int(sys.argv[1]) < int(sys.argv[2]) else 1)
+PY
+    then
+      echo "[warn] deployer balance below MONAD_MIN_BALANCE_WEI=$MONAD_MIN_BALANCE_WEI"
+    fi
+  fi
 fi
 
 deploy_output=""
@@ -59,7 +93,12 @@ for ((attempt=1; attempt<=DEPLOY_RETRIES; attempt++)); do
 
   if printf "%s\n" "$attempt_output" | rg -q "Failed to decode private key"; then
     echo "[error] MONAD_PRIVATE_KEY format invalid." >&2
-    exit 5
+    exit 7
+  fi
+  if printf "%s\n" "$attempt_output" | rg -qi "insufficient balance|insufficient funds"; then
+    echo "[error] signer has insufficient balance." >&2
+    echo "[hint] fund deployer address then retry: $deployer_address" >&2
+    exit 8
   fi
 
   if [[ $attempt -lt $DEPLOY_RETRIES ]]; then
@@ -71,7 +110,7 @@ done
 if [[ $deploy_ok -ne 1 ]]; then
   echo "[error] deployment failed after $DEPLOY_RETRIES attempts." >&2
   echo "[error] inspect log: $LOG_PATH" >&2
-  exit 6
+  exit 9
 fi
 
 contract_address="$(sed -n 's/^Deployed to: \(0x[a-fA-F0-9]\{40\}\)$/\1/p' "$LOG_PATH" | tail -n 1)"
