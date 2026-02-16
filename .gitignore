@@ -8,6 +8,8 @@ venv/
 logs/
 reports/
 out/
+chain/monad/cache/
+chain/monad/out/
 
 # Secrets
 .env
