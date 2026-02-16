@@ -38,9 +38,23 @@ EVOLVE_AUTO_APPROVE=1 ./scripts/demo_openclaw_evolution.sh
 ./scripts/probe_openclaw_runtime.sh
 ```
 
+## Monad Testnet Deployment (for submission proof)
+
+```bash
+export MONAD_PRIVATE_KEY=<your_private_key_hex>
+export MONAD_RPC_URL=https://testnet-rpc.monad.xyz
+export PROJECT_NAME=PolyGenix
+export RELEASE_TAG=moltiverse-2026
+./scripts/deploy_monad_testnet.sh
+```
+
+After deploy, read:
+- `out/chain/monad_latest.env`
+- `docs/MONAD_DEPLOY.md`
+
 ## Key Docs
 
 - `docs/DEMO.md`: on-stage demo flow
 - `docs/openclaw_setup_demo.md`: OpenClaw/Lobster runtime setup
 - `docs/SECURITY_NOTES.md`: security and redaction guidance
-
+- `docs/MONAD_DEPLOY.md`: Monad testnet deploy guide
